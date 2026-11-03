@@ -1,0 +1,491 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DidiCode — DidiScript Engine</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #101510;
+  color: white;
+}
+
+header {
+  padding: 16px;
+  background: #19251c;
+  border-bottom: 2px solid #35d46b;
+}
+
+.logo {
+  color: #35d46b;
+  font-size: 27px;
+  font-weight: bold;
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: #182019;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 15px;
+  font-weight: bold;
+}
+
+nav button {
+  background: #29362b;
+  color: white;
+}
+
+nav button.active,
+#run {
+  background: #35d46b;
+  color: #102014;
+}
+
+main {
+  padding: 14px;
+}
+
+.panel {
+  background: #19211b;
+  border: 1px solid #344438;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+h2 {
+  font-size: 18px;
+  margin-top: 0;
+}
+
+#code {
+  width: 100%;
+  min-height: 300px;
+  resize: vertical;
+  background: #0b100c;
+  color: #9affae;
+  border: 1px solid #3c5741;
+  border-radius: 8px;
+  padding: 14px;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.secondary {
+  background: #344438;
+  color: white;
+}
+
+#screen {
+  min-height: 230px;
+  padding: 18px;
+  border-radius: 10px;
+  background: #080d09;
+  overflow-wrap: anywhere;
+}
+
+#screen button {
+  background: #35d46b;
+  color: #102014;
+  margin: 5px;
+}
+
+#screen img {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  margin: 10px 0;
+}
+
+#status {
+  color: #9affae;
+  font-size: 13px;
+}
+
+#log {
+  color: #c2d1c4;
+  font-family: monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[hidden] {
+  display: none !important;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="logo">didiscript</div>
+  <div>programmer pour les enfant</div>
+</header>
+
+<nav>
+  <button id="codeTab" class="active">Code</button>
+  <button id="studioTab">Studio</button>
+  <button id="run">▶</button>
+</nav>
+
+<main>
+  <section class="panel" id="editorPanel">
+    <h2>🔴🟡🟢</h2>
+
+    <textarea id="code" spellcheck="false">{
+#button#()
++page+=
+<Text>()
+}</textarea>
+
+    <div class="actions">
+      <button id="run2" class="secondary">▶ Exécuter</button>
+      <button id="example" class="secondary">Exemple</button>
+      <button id="clear" class="secondary">Effacer le résultat</button>
+    </div>
+  </section>
+
+  <section class="panel" id="studioPanel" hidden>
+    <h2>Didistudio</h2>
+    <p>Voici le résultat de ton jeu. Clique sur ses boutons pour tester les actions.</p>
+    <div id="screen">Ton jeu apparaîtra ici.</div>
+  </section>
+
+  <section class="panel">
+    <h2>didiscript</h2>
+    <div id="status">run prêt.</div>
+    <pre id="log">En attente de Run...</pre>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/* =================================
+   DIDISCRIPT ENGINE
+   ================================= */
+
+const editor = document.getElementById("code");
+const screen = document.getElementById("screen");
+const log = document.getElementById("log");
+const status = document.getElementById("status");
+const editorPanel = document.getElementById("editorPanel");
+const studioPanel = document.getElementById("studioPanel");
+
+let currentPage = "homepage";
+let pageHistory = [];
+let gameState = "ready";
+
+/* Switch between Code and Studio */
+
+function showMode(mode) {
+  const isCode = mode === "code";
+
+  editorPanel.hidden = !isCode;
+  studioPanel.hidden = isCode;
+
+  document.getElementById("codeTab")
+    .classList.toggle("active", isCode);
+
+  document.getElementById("studioTab")
+    .classList.toggle("active", !isCode);
+}
+
+document.getElementById("codeTab").onclick =
+  () => showMode("code");
+
+document.getElementById("studioTab").onclick =
+  () => showMode("studio");
+
+document.getElementById("run").onclick = runDidiScript;
+document.getElementById("run2").onclick = runDidiScript;
+
+document.getElementById("clear").onclick = () => {
+  screen.replaceChildren();
+  log.textContent = "Résultat effacé.";
+  status.textContent = "Moteur prêt.";
+};
+
+/* Extract blocks enclosed in { } */
+
+function extractBlocks(source) {
+  const blocks = [];
+  let depth = 0;
+  let start = -1;
+
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === "{") {
+      if (depth === 0) start = i + 1;
+      depth++;
+    } else if (source[i] === "}") {
+      depth--;
+
+      if (depth < 0) {
+        throw new Error("Il y a une accolade } sans ouverture.");
+      }
+
+      if (depth === 0) {
+        blocks.push(source.slice(start, i));
+      }
+    }
+  }
+
+  if (depth !== 0) {
+    throw new Error("Il manque une accolade }.");
+  }
+
+  return blocks;
+}
+
+/* Read DidiScript commands */
+
+function parseBlock(block) {
+  const commands = [];
+
+  const pattern =
+    /#button#\(([^)]*)\)|\+page\+=([^\s(){}]+)|<Text>\(([^)]*)\)|<img\d*>\(([^)]*)\)|\*(ride|start|stop|turn|Play loop|Stop loop)\*|!([^!]+)!|\/([^/]+)\//gi;
+
+  let match;
+
+  while ((match = pattern.exec(block)) !== null) {
+    if (match[1] !== undefined) {
+      commands.push({
+        type: "button",
+        value: match[1].trim()
+      });
+    } else if (match[2] !== undefined) {
+      commands.push({
+        type: "page",
+        value: match[2].trim()
+      });
+    } else if (match[3] !== undefined) {
+      commands.push({
+        type: "text",
+        value: match[3]
+      });
+    } else if (match[4] !== undefined) {
+      commands.push({
+        type: "image",
+        value: match[4].trim().replace(/^\?|\?$/g, "")
+      });
+    } else if (match[5] !== undefined) {
+      commands.push({
+        type: "action",
+        value: match[5].toLowerCase()
+      });
+    } else if (match[6] !== undefined) {
+      commands.push({
+        type: "sound",
+        value: match[6]
+      });
+    } else if (match[7] !== undefined) {
+      commands.push({
+        type: "detail",
+        value: match[7].trim()
+      });
+    }
+  }
+
+  return commands;
+}
+
+/* Create a button in Didistudio */
+
+function createGameButton(name, commands) {
+  const button = document.createElement("button");
+  button.textContent = name || "Bouton";
+
+  button.addEventListener("click", () => {
+    executeCommands(commands, name);
+  });
+
+  screen.appendChild(button);
+}
+
+/* Execute the commands */
+
+function executeCommands(commands, buttonName = "") {
+  const messages = [];
+
+  for (const command of commands) {
+    switch (command.type) {
+
+      case "button":
+        createGameButton(command.value, []);
+        messages.push("Bouton créé : " + command.value);
+        break;
+
+      case "page":
+        pageHistory.push(currentPage);
+        currentPage = command.value;
+        screen.dataset.page = currentPage;
+        screen.replaceChildren();
+
+        messages.push("Page ouverte : " + currentPage);
+        break;
+
+      case "text": {
+        const element = document.createElement("p");
+        element.textContent = command.value;
+        screen.appendChild(element);
+        messages.push("Texte ajouté.");
+        break;
+      }
+
+      case "image": {
+        const image = document.createElement("img");
+        image.src = command.value;
+        image.alt = "Image DidiScript : " + command.value;
+
+        image.onerror = () => {
+          image.alt = "Image introuvable : " + command.value;
+        };
+
+        screen.appendChild(image);
+        messages.push("Image : " + command.value);
+        break;
+      }
+
+      case "action":
+        if (command.value === "ride" ||
+            command.value === "start") {
+          gameState = "running";
+          screen.dataset.state = gameState;
+          messages.push("Action démarrée !");
+        }
+
+        if (command.value === "stop") {
+          gameState = "stopped";
+          screen.dataset.state = gameState;
+          messages.push("Action arrêtée.");
+        }
+
+        if (command.value === "turn") {
+          messages.push("Action de rotation détectée.");
+        }
+
+        if (command.value === "play loop") {
+          gameState = "playing";
+          messages.push("Lecture demandée.");
+        }
+
+        if (command.value === "stop loop") {
+          gameState = "stopped";
+          messages.push("Lecture arrêtée.");
+        }
+        break;
+
+      case "sound":
+        messages.push("Son demandé : " + command.value);
+        break;
+
+      case "detail":
+        messages.push("Paramètre : " + command.value);
+        break;
+    }
+  }
+
+  if (messages.length) {
+    log.textContent = messages.join("\n");
+  } else {
+    log.textContent = "Bouton utilisé : " + buttonName;
+  }
+}
+
+/* Main engine */
+
+function runDidiScript() {
+  try {
+    const source = editor.value;
+    const blocks = extractBlocks(source);
+
+    screen.replaceChildren();
+    screen.dataset.page = "homepage";
+    screen.dataset.state = "ready";
+
+    currentPage = "homepage";
+    pageHistory = [];
+    gameState = "ready";
+
+    if (blocks.length === 0) {
+      throw new Error("Écris ton code entre { et }.");
+    }
+
+    for (const block of blocks) {
+      const commands = parseBlock(block);
+
+      // A block that declares a button becomes clickable.
+      const buttonCommand = commands.find(
+        command => command.type === "button"
+      );
+
+      if (buttonCommand) {
+        const otherCommands = commands.filter(
+          command => command.type !== "button"
+        );
+
+        createGameButton(
+          buttonCommand.value,
+          otherCommands
+        );
+      } else {
+        executeCommands(commands);
+      }
+    }
+
+    status.textContent =
+      "✓ Exécution terminée — " + blocks.length + " bloc(s).";
+
+    if (!screen.children.length) {
+      screen.textContent = "Code exécuté. Aucun élément visuel à afficher.";
+    }
+
+    showMode("studio");
+
+  } catch (error) {
+    status.textContent = "Erreur dans DidiScript.";
+    log.textContent = error.message;
+  }
+}
+
+/* Load a sample */
+
+document.getElementById("example").onclick = () => {
+  editor.value = `{ 
+#button#()
++page+=
+<Text>()
+}`;
+
+  showMode("code");
+};
+
+</script>
+</body>
+</html>
+
